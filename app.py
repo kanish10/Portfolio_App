@@ -4,6 +4,7 @@ import os
 import statsmodels.api as sm
 import altair as alt
 import yfinance as yf
+from pathlib import Path    
 from datetime import date, timedelta
 from streamlit_tags import st_tags
 from src.data_layer import fetch_prices
