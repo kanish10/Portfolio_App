@@ -16,21 +16,59 @@ from src.utils      import performance_stats
 
 def fetch_ff_factors() -> pd.DataFrame:
     """
-    Download Ken French's daily FF 3-factor data (Mkt-RF, SMB, HML, RF),
-    convert percentages to decimals, and return a DataFrame indexed by date.
+    Download Ken French's daily FF 3-factor data, coerce the index to datetime,
+    drop any non-date rows, convert percentages to decimals, and return a DataFrame
+    with columns [MktMinusRF, SMB, HML, RF] indexed by a DatetimeIndex.
     """
-    url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip"
-    ff = pd.read_csv(
-        url,
-        header=0,
-        index_col=0,
-        parse_dates=True,
-        skiprows=3,
-        compression="zip",
+    url = (
+        "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+        "F-F_Research_Data_Factors_daily_CSV.zip"
     )
-    # Remove any header/footer rows; keep only rows where the year ≥ 1900
-    ff = ff.loc[ff.index.year >= 1900].astype(float).div(100)
-    ff.columns = ["MktMinusRF", "SMB", "HML", "RF"]
+    # 1) Read CSV from the ZIP URL. Some header/footer rows are non‐date, so we read all and coerce later.
+    raw = pd.read_csv(
+        url,
+        header=0,          # first line of data (column names) appears right after a few introductory lines
+        index_col=0,       # the first column is the “Date” column, but it may contain text lines too
+        parse_dates=False, # don’t auto-parse, we'll coerce manually
+        skiprows=3,        # skip the first 3 lines of intro text (Ken French stuff)
+        compression="zip"
+    )
+
+    # 2) Coerce the index to datetime, using format YYYYMMDD or YYYY-MM-DD. Rows that fail → NaT
+    try:
+        # Often the dates are in YYYYMMDD without separators
+        dates = pd.to_datetime(raw.index.astype(str), format="%Y%m%d", errors="coerce")
+    except Exception:
+        # Fallback: try generic to_datetime
+        dates = pd.to_datetime(raw.index.astype(str), errors="coerce")
+
+    raw.index = dates
+
+    # 3) Drop any rows where the index is NaT (these were non-date footer lines)
+    ff = raw.dropna(subset=[raw.index.name] if raw.index.name in raw.columns else [], how="all")
+    # Actually, better to drop rows whose index is NaT:
+    ff = ff.loc[ff.index.notna()]
+
+    # 4) Now ff.index is a proper DatetimeIndex. Convert all columns to float and divide by 100.
+    # Some rows might still contain strings; .apply(pd.to_numeric, errors='coerce') → NaN, then dropna
+    ff = ff.apply(pd.to_numeric, errors="coerce").dropna(how="all")
+
+    ff = ff.astype(float).div(100)
+
+    # 5) Rename columns (they are usually 'Mkt-RF', 'SMB', 'HML', 'RF')
+    #    but sometimes the CSV has small differences, so we can match by position.
+    # If column names are exactly as expected, rename; otherwise, just reset to these four.
+    if list(ff.columns[:4]) == ["Mkt-RF", "SMB", "HML", "RF"]:
+        ff.columns = ["MktMinusRF", "SMB", "HML", "RF"]
+    else:
+        # Fallback: assume the first four numeric columns are the factors
+        cols = ff.columns.tolist()
+        ff = ff.iloc[:, :4]
+        ff.columns = ["MktMinusRF", "SMB", "HML", "RF"]
+
+    # 6) Finally, keep only years >= 1900 (just in case some stray rows remain)
+    ff = ff.loc[ff.index.year >= 1900]
+
     return ff
 
 # Now define load_or_build_merged; it can safely call fetch_ff_factors()
