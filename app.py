@@ -13,6 +13,107 @@ from src.signals    import composite_alpha
 from src.portfolio  import weight_long_only, backtest
 from src.utils      import performance_stats
 
+
+def fetch_ff_factors() -> pd.DataFrame:
+    """
+    Download Ken French's daily FF 3-factor data (Mkt-RF, SMB, HML, RF),
+    convert percentages to decimals, and return a DataFrame indexed by date.
+    """
+    url = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip"
+    ff = pd.read_csv(
+        url,
+        header=0,
+        index_col=0,
+        parse_dates=True,
+        skiprows=3,
+        compression="zip",
+    )
+    # Remove any header/footer rows; keep only rows where the year ≥ 1900
+    ff = ff.loc[ff.index.year >= 1900].astype(float).div(100)
+    ff.columns = ["MktMinusRF", "SMB", "HML", "RF"]
+    return ff
+
+# Now define load_or_build_merged; it can safely call fetch_ff_factors()
+@st.cache_data(ttl=6*60*60, show_spinner=False)
+def load_or_build_merged(tickers: list[str]) -> pd.DataFrame:
+    """
+    Look for data/merged_ff_data.parquet. If it exists, load & return it.
+    Otherwise, download FF factors and prices, compute monthly merged table,
+    save to Parquet, and return the result.
+    """
+    filepath = Path("data/merged_ff_data.parquet")
+
+    # If the Parquet exists, load and return immediately
+    if filepath.exists():
+        return pd.read_parquet(filepath)
+
+    # 1) Download daily price history for all tickers
+    prices = fetch_prices(" ".join(tickers), start="2000-01-01")
+    prices.index = pd.to_datetime(prices.index)
+
+    # 2) Compute daily returns
+    daily_ret = prices.pct_change().dropna()
+
+    # 3) Download daily Fama–French factors
+    ff = fetch_ff_factors()
+
+    # 4) Inner-join on Date
+    combined = daily_ret.join(ff, how="inner")
+    rf_series = combined["RF"]
+    # Subtract RF from each ticker's daily return to get daily excess
+    tickers_excess = combined[tickers].subtract(rf_series, axis=0).rename(columns=lambda x: x)
+
+    # 5) Stack to long form: columns = Date, Ticker, ExcessReturn
+    df_excess = (
+        tickers_excess
+        .stack()
+        .reset_index()
+        .rename(columns={"level_1": "Ticker", 0: "ExcessReturn"})
+    )
+    factors = combined[["MktMinusRF", "SMB", "HML", "RF"]].reset_index()
+    df_long = pd.merge(df_excess, factors, on="Date", how="left")
+
+    # 6) Convert to month-end and compute monthly returns
+    df_long["MonthEnd"]   = df_long["Date"].dt.to_period("M").dt.to_timestamp("M")
+    df_long["OnePlusEx"]  = df_long["ExcessReturn"] + 1
+
+    # 6a) Monthly stock return per ticker: (prod of (1 + daily excess)) - 1
+    monthly_ret = (
+        df_long
+        .groupby(["MonthEnd", "Ticker"])["OnePlusEx"]
+        .prod()
+        .subtract(1)
+        .reset_index(name="MonthlyRet")
+    )
+
+    # 6b) Average the daily RF, MktMinusRF, SMB, HML over each MonthEnd
+    factor_monthly = (
+        df_long
+        .groupby("MonthEnd")[["RF", "MktMinusRF", "SMB", "HML"]]
+        .mean()
+        .reset_index()
+    )
+
+    # 6c) Merge monthly returns with monthly factors
+    df_monthly = pd.merge(monthly_ret, factor_monthly, on="MonthEnd", how="left")
+    # Compute monthly excess = monthly stock return - RF_monthly
+    df_monthly["ExcessReturn"] = df_monthly["MonthlyRet"] - df_monthly["RF"]
+
+    # 7) Keep only the needed columns
+    final = df_monthly[[
+        "MonthEnd",    # this will be renamed to "Date"
+        "Ticker",
+        "ExcessReturn",
+        "MktMinusRF",
+        "SMB",
+        "HML",
+        "RF",
+    ]].rename(columns={"MonthEnd": "Date"})
+
+    # 8) Save to Parquet and return
+    filepath.parent.mkdir(exist_ok=True)
+    final.to_parquet(filepath, index=False)
+    return final
 # ────────────────────────────────────────────────────────────────────────────
 # 1) PAGE CONFIG & POLISHED DARK THEME (via config.toml + inline CSS)
 st.set_page_config(
