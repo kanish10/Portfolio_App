@@ -1,6 +1,10 @@
 streamlit>=1.33
+streamlit-tags>=0.5.2
 yfinance
 pandas>=2.1
 numpy
 scikit-learn
-pyarrow          # for parquet cache in Streamlit Cloud
+statsmodels
+pyarrow
+scipy
+altair

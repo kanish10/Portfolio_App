@@ -1,7 +1,7 @@
 [theme]
-primaryColor = "#1f77b4"         # a steel-blue highlight (choose your brand color)
-backgroundColor = "#0E1117"      # very dark gray (almost black)
-secondaryBackgroundColor = "#262730" 
-textColor = "#FAFAFA"            # almost-white text
-font = "sans serif"
-base="dark"                      # switch to dark theme
+base="dark"                     # global dark mode
+primaryColor="#00CC96"          # mint-green accent
+backgroundColor="#0E1117"       # near-black background
+secondaryBackgroundColor="#1F2330"  # dark-gray cards/panels
+textColor="#E0E0E0"             # off-white text
+font="sans serif"
