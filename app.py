@@ -33,7 +33,12 @@ perf    = backtest(weights, prices).dropna()
 col1, col2 = st.columns(2)
 with col1:
     st.header("Latest Weights")
-    st.bar_chart(weights.iloc[-1])
+    last_w = (
+    weights.iloc[-1]                      # Series: index = tickers
+           .rename("Weight")              # give the column a name
+           .to_frame()                    # → DataFrame (ticker × Weight)
+    )
+    st.bar_chart(last_w)
 
 with col2:
     st.header("Performance Stats")
