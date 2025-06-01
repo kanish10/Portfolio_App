@@ -1,7 +1,7 @@
 [theme]
-base="dark"                     # global dark mode
-primaryColor="#00CC96"          # mint-green accent
-backgroundColor="#0E1117"       # near-black background
-secondaryBackgroundColor="#1F2330"  # dark-gray cards/panels
-textColor="#E0E0E0"             # off-white text
+base="dark"
+primaryColor="#00CC96"            # mint-green accent
+backgroundColor="#0E1117"         # near-black background
+secondaryBackgroundColor="#1F2330" # dark-gray for cards
+textColor="#E0E0E0"               # off-white text
 font="sans serif"
