@@ -1,0 +1,6 @@
+streamlit>=1.33
+yfinance
+pandas>=2.1
+numpy
+scikit-learn
+pyarrow          # for parquet cache in Streamlit Cloud
