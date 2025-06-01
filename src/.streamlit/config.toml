@@ -1,0 +1,7 @@
+[theme]
+primaryColor = "#1f77b4"         # a steel-blue highlight (choose your brand color)
+backgroundColor = "#0E1117"      # very dark gray (almost black)
+secondaryBackgroundColor = "#262730" 
+textColor = "#FAFAFA"            # almost-white text
+font = "sans serif"
+base="dark"                      # switch to dark theme
