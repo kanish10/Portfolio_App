@@ -1,8 +1,8 @@
 ###############################################################################
 #  Portfolio Coach  –  Dark-Mint Dashboard (Streamlit)
 #
-#  1) Monthly Fama‐French file → sensible betas
-#  2) Force mint‐green tag pills (override any inline styles)
+#  1) FIXED: Monthly Fama‐French file → sensible betas (was mixing daily/monthly)
+#  2) FIXED: Force mint‐green tag pills (better CSS targeting)
 #  3) Remove any leftover red backgrounds on tags
 ###############################################################################
 
@@ -29,7 +29,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─── 1. GLOBAL CSS (dark-mint) – including forced mint‐green tags ────────────
+# ─── 1. GLOBAL CSS (dark-mint) – FIXED tag styling ─────────────────────────
 st.markdown(
     """
     <style>
@@ -46,7 +46,7 @@ st.markdown(
         background: #0E1117 !important;
     }
 
-    /* ─── Left “icon rail” (pure CSS) ────────────────────────────────────── */
+    /* ─── Left "icon rail" (pure CSS) ────────────────────────────────────── */
     .rail {
         position: fixed;
         top: 0;
@@ -122,31 +122,54 @@ st.markdown(
         background: #00CC96 !important;
     }
 
-    /* ─── Tag pills (override any inline color) ───────────────────────── */
-    .stTags input {
+    /* ─── FIXED: Tag pills styling (more comprehensive targeting) ────────── */
+    /* Input field for tags */
+    .stTags input, 
+    div[data-testid="stTags"] input {
         background: #262730 !important;
         color: #E0E0E0 !important;
+        border: 1px solid #444F5A !important;
     }
-    .stTags .tagItem {
-        background: #00CC96 !important;      /* mint‐green */
-        border: 1px solid #00CC96 !important; /* mint‐green border */
-        color: #0E1117 !important;            /* near‐black text on mint */
+    
+    /* Tag items - target multiple possible selectors */
+    .stTags .tagItem,
+    div[data-testid="stTags"] .tagItem,
+    .stTags span[data-baseweb="tag"],
+    div[data-testid="stTags"] span[data-baseweb="tag"],
+    .streamlit-tags .tagItem,
+    span[data-baseweb="tag"] {
+        background: #00CC96 !important;
+        border: 1px solid #00CC96 !important;
+        color: #0E1117 !important;
         border-radius: 4px !important;
         padding: 0.15rem 0.45rem !important;
         margin: 0.1rem !important;
         display: inline-flex !important;
         align-items: center !important;
+        font-weight: 500 !important;
     }
-    /* When the streamlit‐tags library injects an inline style, force it to mint */
-    .stTags .tagItem[style] {
+    
+    /* Force override any inline styles on tags */
+    .stTags .tagItem[style],
+    div[data-testid="stTags"] .tagItem[style],
+    span[data-baseweb="tag"][style] {
         background: #00CC96 !important;
         border-color: #00CC96 !important;
         color: #0E1117 !important;
     }
-    .stTags .removeTag {
-        color: #FF4B4B !important; /* red “X” */
+    
+    /* Remove/close button on tags */
+    .stTags .removeTag,
+    .stTags .tagItem button,
+    div[data-testid="stTags"] .removeTag,
+    div[data-testid="stTags"] .tagItem button,
+    span[data-baseweb="tag"] button {
+        background: transparent !important;
+        color: #0E1117 !important;
+        border: none !important;
         font-weight: bold !important;
         margin-left: 0.3rem !important;
+        cursor: pointer !important;
     }
 
     /* ─── Metric cards ─────────────────────────────────────────────────── */
@@ -165,12 +188,12 @@ st.markdown(
         color: #FFFFFF !important;
     }
 
-    /* ─── Make all charts transparent (card’s bg shows through) ───────── */
+    /* ─── Make all charts transparent (card's bg shows through) ───────── */
     .stLineChart, .stBarChart, .stAltairChart {
         background: transparent !important;
     }
 
-    /* hide Streamlit’s default menu + footer (they sometimes appear white) */
+    /* hide Streamlit's default menu + footer (they sometimes appear white) */
     #MainMenu, footer {
         visibility: hidden;
     }
@@ -179,7 +202,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─── Left “icon rail” insertion ─────────────────────────────────────────────
+# ─── Left "icon rail" insertion ─────────────────────────────────────────────
 st.markdown(
     """
     <div class="rail">
@@ -199,7 +222,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─── Altair “dark_mint” theme ────────────────────────────────────────────────
+# ─── Altair "dark_mint" theme ────────────────────────────────────────────────
 def _theme():
     return {
         "config": {
@@ -222,76 +245,74 @@ def _theme():
 alt.themes.register("dark_mint", _theme)
 alt.themes.enable("dark_mint")
 
-# ─── Small helper to compound daily → monthly returns (not used below) ──────
-def _compound(s: pd.Series) -> float:
-    return (1.0 + s).prod() - 1.0
-
-# ─── 2. load_or_build_merged() (now uses monthly FF file so β is ~1, not 37) ─
+# ─── 2. FIXED load_or_build_merged() (proper monthly data handling) ─────────
 @st.cache_data(ttl=43200, show_spinner=False)
 def load_or_build_merged(tickers: list[str]) -> pd.DataFrame:
     """
-    Produces a monthly table of:
+    FIXED VERSION: Produces a monthly table of:
       Date | Ticker | ExcessReturn | MktMinusRF | SMB | HML | RF
 
-    • uses Ken French’s monthly F-F factors (already %-per-month)
-    • stock’s excessReturn is the compound of daily excess returns
+    • Uses Ken French's monthly F-F factors (already %-per-month)
+    • Converts stock prices to monthly returns properly
+    • Both stock returns and factors are now in same units (monthly %)
     """
     fp = Path("data/merged_ff_data.parquet")
     if fp.exists():
         return pd.read_parquet(fp)
 
-    # 1) Fetch daily prices & daily returns
-    prices  = fetch_prices(" ".join(tickers), start="2000-01-01")
-    daily_r = prices.pct_change().dropna()
+    # 1) Fetch daily prices, convert to monthly prices (month-end)
+    prices = fetch_prices(" ".join(tickers), start="2000-01-01")
+    # Resample to month-end prices
+    monthly_prices = prices.resample('M').last()
+    # Calculate monthly returns
+    monthly_returns = monthly_prices.pct_change().dropna()
 
     # 2) Download Ken French MONTHLY factors (already in % per month)
     monthly_url = (
       "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
       "F-F_Research_Data_Factors.CSV.zip"
     )
-    raw = pd.read_csv(monthly_url, compression="zip", skiprows=3, index_col=0)
-    # raw.index like “199001” as integer or string—append “01” then convert → month-end
-    dates = (pd.to_datetime(raw.index.astype(str) + "01", format="%Y%m%d", errors="coerce")
-               .to_period("M")
-               .to_timestamp("M"))
-    ff = (raw[["Mkt-RF","SMB","HML","RF"]]
-            .set_index(dates)
-            .apply(pd.to_numeric, errors="coerce")
-            .dropna()
-            .div(100))
-    ff.columns = ["MktMinusRF","SMB","HML","RF"]
+    try:
+        raw = pd.read_csv(monthly_url, compression="zip", skiprows=3, index_col=0)
+        # Handle the date conversion more robustly
+        raw = raw[raw.index.astype(str).str.len() == 6]  # Filter valid YYYYMM format
+        dates = pd.to_datetime(raw.index.astype(str) + "01", format="%Y%m%d").to_period("M").to_timestamp("M")
+        
+        ff = (raw[["Mkt-RF","SMB","HML","RF"]]
+                .set_index(dates)
+                .apply(pd.to_numeric, errors="coerce")
+                .dropna()
+                .div(100))  # Convert from % to decimal
+        ff.columns = ["MktMinusRF","SMB","HML","RF"]
+    except Exception as e:
+        st.error(f"Error downloading Fama-French data: {e}")
+        # Return empty DataFrame or use dummy data
+        return pd.DataFrame()
 
-    # 3) Merge daily returns with factors (forward‐fill monthly factor on every day)
-    comb     = daily_r.join(ff.reindex(daily_r.index, method="ffill"), how="inner")
-    excess_d = comb[tickers].sub(comb["RF"], axis=0)  # daily excess = stock_r – RF
+    # 3) Align monthly stock returns with monthly factors
+    # Both are now monthly frequency
+    aligned_data = monthly_returns.join(ff, how='inner')
+    
+    # 4) Calculate monthly excess returns for stocks
+    stock_excess = aligned_data[tickers].sub(aligned_data["RF"], axis=0)
 
-    # 4) “Stack” to long form: (Date, Ticker, ExcessReturn)
-    long = (excess_d
-            .stack()
-            .reset_index()
-            .rename(columns={"level_0": "Date",
-                             "level_1": "Ticker",
-                             0:         "ExcessReturn"}))
+    # 5) Reshape to long format
+    results = []
+    for ticker in tickers:
+        ticker_data = pd.DataFrame({
+            'Date': stock_excess.index,
+            'Ticker': ticker,
+            'ExcessReturn': stock_excess[ticker],
+            'MktMinusRF': aligned_data['MktMinusRF'],
+            'SMB': aligned_data['SMB'],
+            'HML': aligned_data['HML'],
+            'RF': aligned_data['RF']
+        })
+        results.append(ticker_data)
+    
+    final = pd.concat(results, ignore_index=True).dropna()
 
-    # 5) Compute monthly stock excess: compound daily→monthly
-    long["MonthEnd"] = long["Date"].dt.to_period("M").dt.to_timestamp("M")
-    long["OnePlus"]  = 1 + long["ExcessReturn"]
-    m_ret = (
-        long.groupby(["MonthEnd","Ticker"])["OnePlus"]
-            .prod()
-            .sub(1)
-            .reset_index(name="MonthlyRet")
-    )
-
-    # 6) Pull in monthly factors (no further aggregation needed – already %/month)
-    m_ff  = ff.reset_index().rename(columns={"index": "MonthEnd"})
-    final = (
-        m_ret.merge(m_ff, on="MonthEnd")
-             .rename(columns={"MonthEnd": "Date"})
-    )
-    final["ExcessReturn"] = final["MonthlyRet"] - final["RF"]
-
-    # 7) Save to Parquet & return
+    # 6) Save to Parquet & return
     fp.parent.mkdir(exist_ok=True)
     final.to_parquet(fp, index=False)
     return final
@@ -425,61 +446,78 @@ with colB:
     st.line_chart(alpha.xs(sel, level="Ticker"))
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ── Fama–French 3-Factor Regression ─────────────────────────────────────────
+# ── FIXED Fama–French 3-Factor Regression ───────────────────────────────────
 merged = load_or_build_merged(tickers)
-df_t   = (
-    merged[merged["Ticker"] == sel]
-    .set_index("Date")
-    .loc[:pd.to_datetime(cutoff)]
-)
 
-if len(df_t) >= 12:
-    card("Fama–French 3-Factor Regression","🏛️")
-    y   = df_t["ExcessReturn"]
-    X   = sm.add_constant(df_t[["MktMinusRF","SMB","HML"]])
-    mdl = sm.OLS(y, X).fit(cov_type="HAC", cov_kwds={"maxlags": 3})
-
-    a  = mdl.params["const"]
-    bm = mdl.params["MktMinusRF"]
-    bs = mdl.params["SMB"]
-    bv = mdl.params["HML"]
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("α̂", f"{a:.4f}")
-    c2.metric("βₘ", f"{bm:.2f}")
-    c3.metric("βₛ", f"{bs:.2f}")
-    c4.metric("βᵥ", f"{bv:.2f}")
-
-    # predicted next-month excess
-    lastF = df_t[["MktMinusRF","SMB","HML"]].iloc[-1]
-    pred  = a + bm * lastF["MktMinusRF"] + bs * lastF["SMB"] + bv * lastF["HML"]
-    st.markdown(
-        f"<span style='color:#CCC'>"
-        f"Predicted next-month excess: <b>{pred:.2%}</b>"
-        f"</span>",
-        unsafe_allow_html=True
+if not merged.empty:
+    df_t = (
+        merged[merged["Ticker"] == sel]
+        .set_index("Date")
+        .loc[:pd.to_datetime(cutoff)]
     )
 
-    # scatter + regression line
-    pts = df_t[["MktMinusRF","ExcessReturn"]].dropna()
-    fit = pd.DataFrame({
-        "x":[ pts.MktMinusRF.min(), pts.MktMinusRF.max() ],
-        "y":[ a + bm * pts.MktMinusRF.min(), a + bm * pts.MktMinusRF.max() ]
-    })
+    if len(df_t) >= 12:
+        card("Fama–French 3-Factor Regression","🏛️")
+        
+        # Now both y and X are in proper monthly units
+        y = df_t["ExcessReturn"].dropna()
+        X_data = df_t[["MktMinusRF","SMB","HML"]].loc[y.index]
+        X = sm.add_constant(X_data)
+        
+        try:
+            mdl = sm.OLS(y, X).fit(cov_type="HAC", cov_kwds={"maxlags": 3})
 
-    chart = alt.layer(
-        alt.Chart(pts.reset_index()).mark_circle(size=35, opacity=0.6).encode(
-            x="MktMinusRF:Q",
-            y="ExcessReturn:Q"
-        ),
-        alt.Chart(fit).mark_line(strokeWidth=2, color="#FFD700").encode(
-            x="x:Q",
-            y="y:Q"
-        )
-    ).properties(height=260, width="container")
+            a  = mdl.params["const"]
+            bm = mdl.params["MktMinusRF"]
+            bs = mdl.params["SMB"]
+            bv = mdl.params["HML"]
 
-    st.altair_chart(chart, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("α̂ (monthly)", f"{a:.4f}")
+            c2.metric("βₘ (market)", f"{bm:.2f}")
+            c3.metric("βₛ (size)", f"{bs:.2f}")
+            c4.metric("βᵥ (value)", f"{bv:.2f}")
+
+            # Predicted next-month excess using latest factor values
+            if len(X_data) > 0:
+                lastF = X_data.iloc[-1]
+                pred = a + bm * lastF["MktMinusRF"] + bs * lastF["SMB"] + bv * lastF["HML"]
+                st.markdown(
+                    f"<span style='color:#CCC'>"
+                    f"Predicted next-month excess: <b>{pred:.2%}</b>"
+                    f"</span>",
+                    unsafe_allow_html=True
+                )
+
+            # Scatter plot: Market excess return vs Stock excess return
+            pts = pd.DataFrame({
+                'MktMinusRF': X_data["MktMinusRF"],
+                'ExcessReturn': y
+            }).dropna()
+            
+            if len(pts) > 1:
+                fit = pd.DataFrame({
+                    "x": [pts.MktMinusRF.min(), pts.MktMinusRF.max()],
+                    "y": [a + bm * pts.MktMinusRF.min(), a + bm * pts.MktMinusRF.max()]
+                })
+
+                chart = alt.layer(
+                    alt.Chart(pts.reset_index()).mark_circle(size=35, opacity=0.6).encode(
+                        x=alt.X("MktMinusRF:Q", title="Market Excess Return"),
+                        y=alt.Y("ExcessReturn:Q", title=f"{sel} Excess Return")
+                    ),
+                    alt.Chart(fit).mark_line(strokeWidth=2, color="#FFD700").encode(
+                        x="x:Q",
+                        y="y:Q"
+                    )
+                ).properties(height=260, width="container")
+
+                st.altair_chart(chart, use_container_width=True)
+                
+        except Exception as e:
+            st.error(f"Error in regression: {e}")
+            
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # ── Technical Indicators ────────────────────────────────────────────────────
 card("Technical Indicators","🔧")
