@@ -63,9 +63,19 @@ st.markdown(
 
     /* tag pills */
     .stTags input{background:#262730!important;color:#E0E0E0!important}
-    .stTags .tagItem{background:#33394A!important;border:1px solid #444F5A!important;
-        color:#E0E0E0;border-radius:4px;padding:.15rem .45rem;margin:.1rem}
-    .stTags .tagItem:hover{background:#00CC96!important;color:#0E1117!important}
+    .stTags .tagItem{
+    background:#00CC96 !important;     /* mint by default            */
+    border:1px solid #00CC96 !important;
+    color:#0E1117  !important;
+    border-radius:4px;
+    padding:.15rem .45rem;
+    margin:.1rem;
+    }
+    .stTags .tagItem:hover{
+    background:#FFD700 !important;     /* optional: gold on hover    */
+    border-color:#FFD700 !important;
+    color:#0E1117 !important;
+    }
     .stTags .removeTag{color:#FF4B4B!important;font-weight:bold;margin-left:.3rem}
 
     /* metrics */
@@ -111,7 +121,9 @@ def _theme():
         }
     }
 alt.themes.register("dark_mint", _theme); alt.themes.enable("dark_mint")
-
+def _compound(s):
+    """compound daily series into a 1-month return"""
+    return (1.0 + s).prod() - 1.0
 ###############################################################################
 # 2. helper: FF table (monthly)
 ###############################################################################
@@ -142,7 +154,13 @@ def load_or_build_merged(tickers):
     df["OnePlus"]  = df["ExcessReturn"] + 1
     mret = (df.groupby(["MonthEnd","Ticker"])["OnePlus"]
               .prod().sub(1).reset_index(name="MonthlyRet"))
-    mfct = df.groupby("MonthEnd")[["MktMinusRF","SMB","HML","RF"]].mean().reset_index()
+    
+    
+    mfct = (
+    df.groupby("MonthEnd")[["MktMinusRF", "SMB", "HML", "RF"]]
+      .agg(_compound)
+      .reset_index()
+        )
     fin  = mret.merge(mfct, on="MonthEnd")
     fin["ExcessReturn"] = fin["MonthlyRet"] - fin["RF"]
     fin = fin.rename(columns={"MonthEnd":"Date"})
