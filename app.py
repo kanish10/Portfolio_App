@@ -222,28 +222,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ─── Altair "dark_mint" theme ────────────────────────────────────────────────
+# ─── Altair "dark_mint" theme (FIXED deprecation warning) ────────────────────
+@alt.theme.register("dark_mint", enable=True)
 def _theme():
-    return {
-        "config": {
-            "background": "#0E1117",
-            "axis": {
-                "gridColor": "#222631",
-                "domainColor": "#444F5A",
-                "labelColor": "#888",
-                "titleColor": "#AAA"
-            },
-            "legend": {"labelColor": "#E0E0E0", "titleColor": "#E0E0E0"},
-            "title": {"color": "#E0E0E0"},
-            "line": {"color": "#00CC96"},
-            "range": {
-                "category": ["#00CC96","#FFD700","#FF7F50","#4AA8D8","#C997FF"]
-            }
+    return alt.theme.ThemeConfig({
+        "background": "#0E1117",
+        "axis": {
+            "gridColor": "#222631",
+            "domainColor": "#444F5A",
+            "labelColor": "#888",
+            "titleColor": "#AAA"
+        },
+        "legend": {"labelColor": "#E0E0E0", "titleColor": "#E0E0E0"},
+        "title": {"color": "#E0E0E0"},
+        "line": {"color": "#00CC96"},
+        "range": {
+            "category": ["#00CC96","#FFD700","#FF7F50","#4AA8D8","#C997FF"]
         }
-    }
-
-alt.themes.register("dark_mint", _theme)
-alt.themes.enable("dark_mint")
+    })
 
 # ─── 2. FIXED load_or_build_merged() (proper monthly data handling) ─────────
 @st.cache_data(ttl=43200, show_spinner=False)
@@ -569,7 +565,7 @@ st.markdown(
     "<span style='color:#CCC'>14-day RSI (Overbought >70, Oversold <30)</span>",
     unsafe_allow_html=True
 )
-st.line_chart(rsi14.fillna(method="ffill"))
+st.line_chart(rsi14.ffill())
 
 st.markdown("</div>", unsafe_allow_html=True)
 
