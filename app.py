@@ -76,6 +76,13 @@ st.markdown(
     border-color:#FFD700 !important;
     color:#0E1117 !important;
     }
+    /* force mint tags even when the library injects an inline colour */
+    .stTags .tagItem[style]{
+    background:#00CC96 !important;
+    border-color:#00CC96 !important;
+    color:#0E1117 !important;
+    }
+
     .stTags .removeTag{color:#FF4B4B!important;font-weight:bold;margin-left:.3rem}
 
     /* metrics */
@@ -128,44 +135,62 @@ def _compound(s):
 # 2. helper: FF table (monthly)
 ###############################################################################
 @st.cache_data(ttl=43200, show_spinner=False)
-def load_or_build_merged(tickers):
-    f = Path("data/merged_ff_data.parquet")
-    if f.exists(): return pd.read_parquet(f)
+def load_or_build_merged(tickers: list[str]) -> pd.DataFrame:
+    """
+    Monthly table    Date | Ticker | ExcessReturn | MktMinusRF | SMB | HML | RF
+    ─────────────
+    • Stock excess return is compounded from daily data
+    • Fama-French factors are pulled from the *monthly* file
+      so their units already match the stock return scale
+    """
+    fp = Path("data/merged_ff_data.parquet")
+    if fp.exists():
+        return pd.read_parquet(fp)
 
+    # 1 ▸ daily prices  →  daily pct-change
     prices = fetch_prices(" ".join(tickers), start="2000-01-01")
-    ret    = prices.pct_change().dropna()
-    ff_url = ("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
-              "F-F_Research_Data_Factors_daily_CSV.zip")
-    raw = pd.read_csv(ff_url, skiprows=3, index_col=0, compression="zip")
-    raw.index = pd.to_datetime(raw.index.astype(str), format="%Y%m%d", errors="coerce")
-    ff = (raw[["Mkt-RF","SMB","HML","RF"]]
-          .apply(pd.to_numeric, errors="coerce")
-          .dropna().div(100))
-    ff.columns = ["MktMinusRF","SMB","HML","RF"]
+    daily_r = prices.pct_change().dropna()
 
-    comb = ret.join(ff, how="inner")
-    ex   = comb[tickers].sub(comb["RF"], axis=0)
-    long = (ex.stack()
+    # 2 ▸ MONTHLY Ken-French factors (already %-per-month)
+    url = ("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+           "F-F_Research_Data_Factors.CSV.zip")          # ← monthly file
+    raw = pd.read_csv(url, compression="zip",
+                      skiprows=3, index_col=0)
+    # rows are YYYYMM – convert to month-end timestamp
+    dates = pd.to_datetime(raw.index.astype(str) + "01", format="%Y%m%d") \
+                .to_period("M").to_timestamp("M")
+    ff = (raw[["Mkt-RF", "SMB", "HML", "RF"]]
+            .set_index(dates)
+            .apply(pd.to_numeric, errors="coerce")
+            .dropna()
+            .div(100))
+    ff.columns = ["MktMinusRF", "SMB", "HML", "RF"]
+
+    # 3 ▸ daily merge to compute excess then roll-up
+    comb = daily_r.join(ff.reindex(daily_r.index, method="ffill"))
+    excess_d = comb[tickers].sub(comb["RF"], axis=0)
+
+    long = (excess_d.stack()
               .reset_index()
-              .rename(columns={"level_0":"Date","level_1":"Ticker",0:"ExcessReturn"}))
-    factors = comb[["MktMinusRF","SMB","HML","RF"]].reset_index()
-    df = long.merge(factors, on="Date")
-    df["MonthEnd"] = df["Date"].dt.to_period("M").dt.to_timestamp("M")
-    df["OnePlus"]  = df["ExcessReturn"] + 1
-    mret = (df.groupby(["MonthEnd","Ticker"])["OnePlus"]
-              .prod().sub(1).reset_index(name="MonthlyRet"))
-    
-    
-    mfct = (
-    df.groupby("MonthEnd")[["MktMinusRF", "SMB", "HML", "RF"]]
-      .agg(_compound)
-      .reset_index()
-        )
-    fin  = mret.merge(mfct, on="MonthEnd")
-    fin["ExcessReturn"] = fin["MonthlyRet"] - fin["RF"]
-    fin = fin.rename(columns={"MonthEnd":"Date"})
-    f.parent.mkdir(exist_ok=True); fin.to_parquet(f, index=False)
-    return fin
+              .rename(columns={"level_0":"Date",
+                               "level_1":"Ticker",
+                               0:"ExcessReturn"}))
+
+    # month-end compounding of stock excess
+    long["MonthEnd"] = long["Date"].dt.to_period("M").dt.to_timestamp("M")
+    long["OnePlus"]  = 1 + long["ExcessReturn"]
+    m_ret = (long.groupby(["MonthEnd", "Ticker"])["OnePlus"]
+                 .prod().sub(1).reset_index(name="MonthlyRet"))
+
+    # bring in monthly factors
+    m_ff  = ff.reset_index().rename(columns={"index":"MonthEnd"})
+    final = (m_ret.merge(m_ff, on="MonthEnd")
+                   .rename(columns={"MonthEnd":"Date"}))
+    final["ExcessReturn"] = final["MonthlyRet"] - final["RF"]
+
+    fp.parent.mkdir(exist_ok=True)
+    final.to_parquet(fp, index=False)
+    return final
 ###############################################################################
 # 3.  SIDEBAR
 ###############################################################################
